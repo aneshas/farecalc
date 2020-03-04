@@ -8,7 +8,10 @@ import (
 	"log"
 	"math"
 	"os"
+	"runtime"
+	"runtime/trace"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -19,155 +22,98 @@ type pathNode struct {
 	Timestamp time.Time
 }
 
-type segment struct {
+type work [][]string
+
+type rideFare struct {
 	RideID int
-	Fare   float64 // decimal?
+	Fare   float64
 }
 
-const queueSize = 512
-
 func main() {
-	unfilteredNodes := make(chan *pathNode, queueSize)
-	segmentsWithFare := make(chan *segment, queueSize)
+	// f, err := os.Create("./cpuprofile.out")
+	// if err != nil {
+	// 	log.Fatal("could not create CPU profile: ", err)
+	// }
+	// defer f.Close()
+	// if err := pprof.StartCPUProfile(f); err != nil {
+	// 	log.Fatal("could not start CPU profile: ", err)
+	// }
+	// defer pprof.StopCPUProfile()
 
-	go runNodeSource(unfilteredNodes)
-	go calculateFare(unfilteredNodes, segmentsWithFare)
-
-	aggregateSegments(segmentsWithFare)
+	f, err := os.Create("./trace.out")
+	if err != nil {
+		log.Fatal("could not create CPU profile: ", err)
+	}
+	defer f.Close()
+	if err := trace.Start(f); err != nil {
+		log.Fatal("could not start CPU profile: ", err)
+	}
+	defer trace.Stop()
 
 	///
 
-	// go runNodeSource(unfilteredNodes)
+	workChan := make(chan work, runtime.NumCPU()) // probably procs num
+	fareChan := make(chan *rideFare, 10000)
 
-	// var nodes []*pathNode
+	go runPathSource(workChan)
+	go spawnWorkers(workChan, fareChan)
 
-	// for node := range unfilteredNodes {
-	// 	nodes = append(nodes, node)
-	// }
-
-	// out, err := os.Create("paths-large.csv")
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
-
-	// defer out.Close()
-
-	// num := 17773 // ~1GB
-
-	// writer := bufio.NewWriter(out)
-
-	// for i := 0; i < num; i++ {
-	// 	for _, n := range nodes {
-	// 		writer.WriteString(fmt.Sprintf("%d,%v,%v,%d\n", n.RideID+i*9, n.Lat, n.Lng, n.Timestamp.Unix()))
-	// 	}
-	// }
+	runCSVSink(fareChan)
 }
 
-func calculateFare(source chan *pathNode, sink chan *segment) {
+func spawnWorkers(workChan chan work, sink chan *rideFare) {
 	defer close(sink)
 
-	p1 := <-source
+	n := runtime.NumCPU() - 1
+	// n := 1
 
-	for p2 := range source {
-		if p2.RideID != p1.RideID {
-			// This node indicates start of a new ride
-			p1 = p2
-			continue
-		}
+	var wg sync.WaitGroup
 
-		t := p2.Timestamp.Sub(p1.Timestamp).Hours()
-		s := Distance(Coord{p1.Lat, p1.Lng}, Coord{p2.Lat, p2.Lng})
-		v := s / t
+	wg.Add(n)
 
-		if v > 100 {
-			// Node is invalid, skip it and fetch next one
-			continue
-		}
+	for i := 0; i < n; i++ {
+		go func() {
+			defer wg.Done()
 
-		// Both nodes are valid
+			for w := range workChan {
+				fare := 1.30
+				p1, _ := parseRecord(w[0]) // Rename to Paths
 
-		sink <- &segment{
-			RideID: p1.RideID,
-			Fare:   getFare(s, v, t, p1, p2),
-		}
+				for _, record := range w[1:] {
+					p2, _ := parseRecord(record)
+					// if err not nil log error and skip
 
-		// Set start of a new node
-		p1 = p2
-	}
-}
+					t := p2.Timestamp.Sub(p1.Timestamp).Hours()
+					s := Distance(Coord{p1.Lat, p1.Lng}, Coord{p2.Lat, p2.Lng})
+					v := s / t
 
-func getFare(kms, speed, hours float64, p1, p2 *pathNode) float64 {
-	if speed <= 10 {
-		return 11.90 * hours
-	}
+					if v > 100 {
+						// Node is invalid, skip it and fetch next one
+						continue
+					}
 
-	return 0.47
-}
+					fare += getFare(s, v, t, p1, p2)
 
-func aggregateSegments(source chan *segment) {
-	out, err := os.Create("fares.csv")
-	if err != nil {
-		log.Fatal(err)
-	}
+					p1 = p2
+				}
 
-	defer out.Close()
+				totalFare := math.Ceil(fare*100) / 100
 
-	writer := bufio.NewWriter(out)
-	defer writer.Flush()
+				if totalFare < 3.47 {
+					totalFare = 3.47
+				}
 
-	rideID := -1
-	var fare float64
-
-	for ps := range source {
-		if rideID == -1 {
-			rideID = ps.RideID
-		}
-
-		if rideID != ps.RideID {
-			totalFare := fare + 1.30
-			totalFare = math.Ceil(totalFare*100) / 100
-
-			if totalFare < 3.47 {
-				totalFare = 3.47
+				sink <- &rideFare{p1.RideID, totalFare}
+				pool <- w
 			}
-
-			writer.WriteString(fmt.Sprintf("%d,%v\n", rideID, totalFare))
-
-			rideID = ps.RideID
-			fare = 0
-		}
-
-		fare += ps.Fare
+		}()
 	}
+
+	wg.Wait()
 }
 
-func runNodeSource(sink chan *pathNode) {
-	defer close(sink)
-
-	file, _ := os.Open("./paths-large.csv")
-	defer file.Close()
-
-	reader := csv.NewReader(bufio.NewReader(file))
-
-	for {
-		node, err := parsePathNode(reader)
-		if err != nil {
-			if err == io.EOF {
-				return
-			}
-			log.Fatal(err)
-		}
-
-		sink <- node
-	}
-}
-
-func parsePathNode(reader *csv.Reader) (*pathNode, error) {
-	record, err := reader.Read()
-	if err != nil {
-		return nil, err
-	}
-
+func parseRecord(record []string) (*pathNode, error) {
+	// TODO - Handle errors
 	id, _ := strconv.Atoi(record[0])
 	lat, _ := strconv.ParseFloat(record[1], 54)
 	lng, _ := strconv.ParseFloat(record[2], 54)
@@ -179,4 +125,82 @@ func parsePathNode(reader *csv.Reader) (*pathNode, error) {
 		Lng:       lng,
 		Timestamp: time.Unix(sec, 0),
 	}, nil
+}
+
+func getFare(kms, speed, hours float64, p1, p2 *pathNode) float64 {
+	if speed <= 10 {
+		return 11.90 * hours
+	}
+
+	return 0.47
+}
+
+func runCSVSink(faresChan chan *rideFare) {
+	out, err := os.Create("fares01.csv")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer out.Close()
+
+	writer := bufio.NewWriter(out)
+	defer writer.Flush()
+
+	for fare := range faresChan {
+		writer.WriteString(fmt.Sprintf("%d,%v\n", fare.RideID, fare.Fare))
+	}
+}
+
+func runPathSource(workChan chan work) {
+	defer close(workChan)
+
+	file, _ := os.Open("./paths-large.csv")
+	// file, _ := os.Open("./xxl.csv")
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+
+	// reader.ReuseRecord = true
+
+	currentRideID := ""
+	w := <-pool
+	w = w[:0]
+
+	// TODO - Reuse whole work struct ?
+
+	for {
+		record, err := reader.Read()
+		if err != nil {
+			if err == io.EOF {
+				// TODO - Is this the last record
+				return
+			}
+			log.Fatal(err)
+		}
+
+		if currentRideID == "" {
+			currentRideID = record[0]
+		}
+
+		if record[0] != currentRideID {
+			workChan <- w
+
+			currentRideID = record[0]
+			// nodes = [][]string{}
+			w = <-pool
+			w = w[:0]
+
+			continue
+		}
+
+		w = append(w, record)
+	}
+}
+
+var pool = make(chan work, runtime.NumCPU()*2)
+
+func init() {
+	for i := 0; i < runtime.NumCPU()*2; i++ {
+		pool <- make(work, 0, 100)
+	}
 }
