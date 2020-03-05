@@ -38,16 +38,14 @@ func init() {
 	fiveAM, _ = time.Parse("15:04:05", "05:00:01")
 }
 
-// Segment represents a ride segment.
-// It is derived from two continuous path entries
-type Segment struct {
+type segment struct {
 	DistanceKM float64
 	DurationH  float64
 	SpeedKMH   float64
 	TimeOfDay  time.Time
 }
 
-func getSegmentFare(seg *Segment) float64 {
+func getSegmentFare(seg *segment) float64 {
 	if seg.SpeedKMH <= IdleSpeedThresholdKMH {
 		return FixedIdleFare * seg.DurationH
 	}

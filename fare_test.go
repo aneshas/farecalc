@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func TestGetSegmentFare_Charges_Fixed_Fee_For_Idle_Time(t *testing.T) {
+func TestGetsegmentFare_Charges_Fixed_Fee_For_Idle_Time(t *testing.T) {
 	cases := []struct {
 		speed    float64
 		duration float64
@@ -31,7 +31,7 @@ func TestGetSegmentFare_Charges_Fixed_Fee_For_Idle_Time(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(fmt.Sprintf("speed: %v", tc.speed), func(t *testing.T) {
-			fare := getSegmentFare(&Segment{
+			fare := getSegmentFare(&segment{
 				SpeedKMH:  tc.speed,
 				DurationH: tc.duration,
 			})
@@ -43,7 +43,7 @@ func TestGetSegmentFare_Charges_Fixed_Fee_For_Idle_Time(t *testing.T) {
 	}
 }
 
-func TestGetSegmentFare_Charges_PerKM_Fee_For_Early_Ride(t *testing.T) {
+func TestGetsegmentFare_Charges_PerKM_Fee_For_Early_Ride(t *testing.T) {
 	cases := []struct {
 		speed     float64
 		distance  float64
@@ -72,7 +72,7 @@ func TestGetSegmentFare_Charges_PerKM_Fee_For_Early_Ride(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(fmt.Sprintf("speed: %v", tc.speed), func(t *testing.T) {
-			fare := getSegmentFare(&Segment{
+			fare := getSegmentFare(&segment{
 				SpeedKMH:   tc.speed,
 				DistanceKM: tc.distance,
 				TimeOfDay:  tc.timeOfDay,
@@ -85,7 +85,7 @@ func TestGetSegmentFare_Charges_PerKM_Fee_For_Early_Ride(t *testing.T) {
 	}
 }
 
-func TestGetSegmentFare_Charges_PerKM_Fee_For_Normal_Ride(t *testing.T) {
+func TestGetsegmentFare_Charges_PerKM_Fee_For_Normal_Ride(t *testing.T) {
 	cases := []struct {
 		speed     float64
 		distance  float64
@@ -114,7 +114,7 @@ func TestGetSegmentFare_Charges_PerKM_Fee_For_Normal_Ride(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(fmt.Sprintf("speed: %v", tc.speed), func(t *testing.T) {
-			fare := getSegmentFare(&Segment{
+			fare := getSegmentFare(&segment{
 				SpeedKMH:   tc.speed,
 				DistanceKM: tc.distance,
 				TimeOfDay:  tc.timeOfDay,

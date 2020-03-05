@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io/ioutil"
+	"os"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -92,4 +96,36 @@ func TestParsePath_Parses_Path_From_CSV_Record(t *testing.T) {
 func getTimestamp(str string) time.Time {
 	t, _ := time.Parse(time.RFC3339, str)
 	return t.UTC()
+}
+
+func TestRun(t *testing.T) {
+	src, err := os.Open("./testdata/paths.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer src.Close()
+
+	var sink bytes.Buffer
+
+	run(src, &sink)
+
+	want, err := ioutil.ReadFile("./fares.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !areEqual(want, sink.Bytes()) {
+		t.Fatalf("invalid output! want: %s got: %s", string(want), sink.String())
+	}
+}
+
+func areEqual(want, got []byte) bool {
+	wslice := strings.Split(string(want), "\n")
+	sort.Strings(wslice)
+
+	gslice := strings.Split(string(got), "\n")
+	sort.Strings(gslice)
+
+	return reflect.DeepEqual(wslice, gslice)
 }

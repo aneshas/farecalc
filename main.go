@@ -28,14 +28,18 @@ type rideFare struct {
 var numWorkers = runtime.NumCPU()
 
 func main() {
-	workChan := make(chan work, numWorkers)
-	fareChan := make(chan *rideFare, numWorkers)
-
 	src := getSource()
 	defer src.Close()
 
 	sink := getSink()
 	defer sink.Close()
+
+	run(src, sink)
+}
+
+func run(src io.Reader, sink io.Writer) {
+	workChan := make(chan work, numWorkers)
+	fareChan := make(chan *rideFare, numWorkers)
 
 	go produceWork(src, workChan)
 	go spawnWorkers(workChan, fareChan)
@@ -135,7 +139,7 @@ func calcRideFare(w work) *rideFare {
 	for _, record := range w[1:] {
 		p2 = parsePath(record)
 
-		seg := Segment{
+		seg := segment{
 			DurationH:  p2.Timestamp.Sub(p1.Timestamp).Hours(),
 			DistanceKM: Distance(Coord{p1.Lat, p1.Lng}, Coord{p2.Lat, p2.Lng}),
 			TimeOfDay:  p1.Timestamp,
