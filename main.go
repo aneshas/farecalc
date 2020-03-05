@@ -19,8 +19,6 @@ type pathNode struct {
 	Timestamp time.Time
 }
 
-type work [][]string
-
 type rideFare struct {
 	RideID int
 	Fare   float64
@@ -32,51 +30,47 @@ var (
 	pool       = make(chan work, poolSize)
 )
 
-func init() {
-	for i := 0; i < poolSize; i++ {
-		pool <- make(work, 0, 100)
-	}
-}
-
 func main() {
-	// f, err := os.Create("./cpuprofile.out")
-	// if err != nil {
-	// 	log.Fatal("could not create CPU profile: ", err)
-	// }
-	// defer f.Close()
-	// if err := pprof.StartCPUProfile(f); err != nil {
-	// 	log.Fatal("could not start CPU profile: ", err)
-	// }
-	// defer pprof.StopCPUProfile()
-
-	// f, err := os.Create("./trace.out")
-	// if err != nil {
-	// 	log.Fatal("could not create CPU profile: ", err)
-	// }
-	// defer f.Close()
-	// if err := trace.Start(f); err != nil {
-	// 	log.Fatal("could not start CPU profile: ", err)
-	// }
-	// defer trace.Stop()
-
-	///
-
 	workChan := make(chan work, 10000) // probably procs num
 	fareChan := make(chan *rideFare, 10000)
 
-	go runPathSource(workChan)
+	go produceWork(getSource(), workChan)
 	go spawnWorkers(workChan, fareChan)
 
-	runCSVSink(fareChan)
+	runCSVSink(getSink(), fareChan)
 }
 
-func runPathSource(workChan chan work) {
+func getSource() io.ReadCloser {
+	if len(os.Args) < 2 {
+		return os.Stdin
+	}
+
+	in, err := os.Open(os.Args[1])
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return in
+}
+
+func getSink() io.WriteCloser {
+	if len(os.Args) < 3 {
+		return os.Stdout
+	}
+
+	out, err := os.Create(os.Args[2])
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return out
+}
+
+func produceWork(source io.ReadCloser, workChan chan work) {
+	defer source.Close()
 	defer close(workChan)
 
-	file, _ := os.Open("./paths-large.csv")
-	defer file.Close()
-
-	reader := csv.NewReader(file)
+	reader := csv.NewReader(source)
 
 	var currentRideID *string
 	w := getWork()
@@ -108,11 +102,6 @@ func runPathSource(workChan chan work) {
 	}
 }
 
-func getWork() work {
-	w := <-pool
-	return w[:0]
-}
-
 func spawnWorkers(workChan chan work, sink chan *rideFare) {
 	defer close(sink)
 
@@ -137,11 +126,6 @@ func spawnWorkers(workChan chan work, sink chan *rideFare) {
 func calcRideFare(w work) *rideFare {
 	var fare float64
 
-	// TODO
-	// 1. get segments
-	// 2. filter segments
-	// 3. accumulate fares
-
 	p1, _ := parsePath(w[0])
 
 	for _, record := range w[1:] {
@@ -153,7 +137,6 @@ func calcRideFare(w work) *rideFare {
 		speed := distance / duration
 
 		if speed > 100 {
-			// Node is invalid, skip it and fetch next one
 			continue
 		}
 
@@ -185,15 +168,10 @@ func parsePath(record []string) (*pathNode, error) {
 	}, nil
 }
 
-func runCSVSink(faresChan chan *rideFare) {
-	out, err := os.Create("fares01.csv")
-	if err != nil {
-		log.Fatal(err)
-	}
+func runCSVSink(sink io.WriteCloser, faresChan chan *rideFare) {
+	defer sink.Close()
 
-	defer out.Close()
-
-	writer := bufio.NewWriter(out)
+	writer := bufio.NewWriter(sink)
 	defer writer.Flush()
 
 	for fare := range faresChan {
