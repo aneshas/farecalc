@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"runtime"
 	"strconv"
 	"sync"
 	"time"
@@ -24,20 +25,22 @@ type rideFare struct {
 	Fare   float64
 }
 
-var (
-	numWorkers = 6
-	poolSize   = numWorkers * 2
-	pool       = make(chan work, poolSize)
-)
+var numWorkers = runtime.NumCPU()
 
 func main() {
-	workChan := make(chan work, 10000) // probably procs num
-	fareChan := make(chan *rideFare, 10000)
+	workChan := make(chan work, numWorkers)
+	fareChan := make(chan *rideFare, numWorkers)
 
-	go produceWork(getSource(), workChan)
+	src := getSource()
+	defer src.Close()
+
+	sink := getSink()
+	defer sink.Close()
+
+	go produceWork(src, workChan)
 	go spawnWorkers(workChan, fareChan)
 
-	runCSVSink(getSink(), fareChan)
+	runCSVSink(sink, fareChan)
 }
 
 func getSource() io.ReadCloser {
@@ -66,8 +69,7 @@ func getSink() io.WriteCloser {
 	return out
 }
 
-func produceWork(source io.ReadCloser, workChan chan work) {
-	defer source.Close()
+func produceWork(source io.Reader, workChan chan work) {
 	defer close(workChan)
 
 	reader := csv.NewReader(source)
@@ -125,27 +127,26 @@ func spawnWorkers(workChan chan work, sink chan *rideFare) {
 
 func calcRideFare(w work) *rideFare {
 	var fare float64
+	var p1, p2 *pathNode
 
-	p1, _ := parsePath(w[0])
+	p1 = parsePath(w[0])
 
 	for _, record := range w[1:] {
-		p2, _ := parsePath(record)
-		// if err not nil log error and skip
+		p2 = parsePath(record)
 
-		duration := p2.Timestamp.Sub(p1.Timestamp).Hours()
-		distance := Distance(Coord{p1.Lat, p1.Lng}, Coord{p2.Lat, p2.Lng})
-		speed := distance / duration
+		seg := Segment{
+			DurationH:  p2.Timestamp.Sub(p1.Timestamp).Hours(),
+			DistanceKM: Distance(Coord{p1.Lat, p1.Lng}, Coord{p2.Lat, p2.Lng}),
+			TimeOfDay:  p1.Timestamp,
+		}
 
-		if speed > 100 {
+		seg.SpeedKMH = seg.DistanceKM / seg.DurationH
+
+		if seg.SpeedKMH > 100 {
 			continue
 		}
 
-		fare += getSegmentFare(&Segment{
-			DistanceKM: distance,
-			DurationH:  duration,
-			SpeedKMH:   speed,
-			TimeOfDay:  p1.Timestamp,
-		})
+		fare += getSegmentFare(&seg)
 
 		p1 = p2
 	}
@@ -153,24 +154,36 @@ func calcRideFare(w work) *rideFare {
 	return &rideFare{p1.RideID, getRideFare(fare)}
 }
 
-func parsePath(record []string) (*pathNode, error) {
-	// TODO - Handle errors
-	id, _ := strconv.Atoi(record[0])
-	lat, _ := strconv.ParseFloat(record[1], 54)
-	lng, _ := strconv.ParseFloat(record[2], 54)
-	sec, _ := strconv.ParseInt(record[3], 10, 64)
+func parsePath(record []string) *pathNode {
+	id, err := strconv.Atoi(record[0])
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	lat, err := strconv.ParseFloat(record[1], 54)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	lng, err := strconv.ParseFloat(record[2], 54)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	sec, err := strconv.ParseInt(record[3], 10, 64)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	return &pathNode{
 		RideID:    id,
 		Lat:       lat,
 		Lng:       lng,
-		Timestamp: time.Unix(sec, 0),
-	}, nil
+		Timestamp: time.Unix(sec, 0).UTC(),
+	}
 }
 
-func runCSVSink(sink io.WriteCloser, faresChan chan *rideFare) {
-	defer sink.Close()
-
+func runCSVSink(sink io.Writer, faresChan chan *rideFare) {
 	writer := bufio.NewWriter(sink)
 	defer writer.Flush()
 
