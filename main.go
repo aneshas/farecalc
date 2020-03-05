@@ -28,10 +28,12 @@ type rideFare struct {
 var numWorkers = runtime.NumCPU()
 
 func main() {
-	src := getSource()
+	args := os.Args[1:]
+
+	src := getSource(args)
 	defer src.Close()
 
-	sink := getSink()
+	sink := getSink(args)
 	defer sink.Close()
 
 	run(src, sink)
@@ -47,12 +49,12 @@ func run(src io.Reader, sink io.Writer) {
 	runCSVSink(sink, fareChan)
 }
 
-func getSource() io.ReadCloser {
-	if len(os.Args) < 2 {
+func getSource(args []string) io.ReadCloser {
+	if len(args) < 1 {
 		return os.Stdin
 	}
 
-	in, err := os.Open(os.Args[1])
+	in, err := os.Open(args[0])
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -60,12 +62,12 @@ func getSource() io.ReadCloser {
 	return in
 }
 
-func getSink() io.WriteCloser {
-	if len(os.Args) < 3 {
+func getSink(args []string) io.WriteCloser {
+	if len(args) < 2 {
 		return os.Stdout
 	}
 
-	out, err := os.Create(os.Args[2])
+	out, err := os.Create(args[1])
 	if err != nil {
 		log.Fatal(err)
 	}
