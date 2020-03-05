@@ -1,2 +1,4 @@
+github.com/shopspring/decimal v0.0.0-20200227202807-02e2044944cc h1:jUIKcSPO9MoMJBbEoyE/RJoE8vz7Mb8AjvifMMwSyvY=
+github.com/shopspring/decimal v0.0.0-20200227202807-02e2044944cc/go.mod h1:DKyhrW/HYNuLGql+MJL6WCR6knT2jwCFRcu2hWCYk4o=
 golang.org/dl v0.0.0-20200302224518-306f3096cb2f h1:k0JXU5/A99mZ91hQmY+2BkVN4+mzWSFmfjJu5QHm/kU=
 golang.org/dl v0.0.0-20200302224518-306f3096cb2f/go.mod h1:IUMfjQLJQd4UTqG1Z90tenwKoCX93Gn3MAQJMOSBsDQ=
