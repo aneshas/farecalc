@@ -114,9 +114,17 @@ func spawnWorkers(workChan chan work, sink chan *rideFare) {
 	for i := 0; i < numWorkers; i++ {
 		go func() {
 			defer wg.Done()
+			var segments []*Segment
 
 			for w := range workChan {
-				sink <- calcRideFare(w)
+				rideID := parseSegments(w, segments[:0])
+				sink <- calcRideFare(
+					rideID,
+					segments,
+					func(seg *Segment) bool {
+						return seg.SpeedKMH <= 100
+					},
+				)
 				pool <- w
 			}
 		}()
@@ -125,8 +133,47 @@ func spawnWorkers(workChan chan work, sink chan *rideFare) {
 	wg.Wait()
 }
 
-func calcRideFare(w work) *rideFare {
+func calcRideFare(rideID int, segments []*Segment, validf func(*Segment) bool) *rideFare {
 	var fare float64
+
+	// rideID, segments := parseSegments(w)
+
+	for _, seg := range segments {
+		if !validf(seg) {
+			continue
+		}
+
+		fare += getSegmentFare(seg)
+	}
+
+	// var p1, p2 *pathNode
+
+	// p1 = parsePath(w[0])
+
+	// for _, record := range w[1:] {
+	// 	p2 = parsePath(record)
+
+	// 	seg := Segment{
+	// 		DurationH:  p2.Timestamp.Sub(p1.Timestamp).Hours(),
+	// 		DistanceKM: Distance(Coord{p1.Lat, p1.Lng}, Coord{p2.Lat, p2.Lng}),
+	// 		TimeOfDay:  p1.Timestamp,
+	// 	}
+
+	// 	seg.SpeedKMH = seg.DistanceKM / seg.DurationH
+
+	// 	if seg.SpeedKMH > 100 {
+	// 		continue
+	// 	}
+
+	// 	fare += getSegmentFare(&seg)
+
+	// 	p1 = p2
+	// }
+
+	return &rideFare{rideID, getRideFare(fare)}
+}
+
+func parseSegments(w work, segments []*Segment) int {
 	var p1, p2 *pathNode
 
 	p1 = parsePath(w[0])
@@ -142,16 +189,11 @@ func calcRideFare(w work) *rideFare {
 
 		seg.SpeedKMH = seg.DistanceKM / seg.DurationH
 
-		if seg.SpeedKMH > 100 {
-			continue
-		}
-
-		fare += getSegmentFare(&seg)
-
+		segments = append(segments, &seg)
 		p1 = p2
 	}
 
-	return &rideFare{p1.RideID, getRideFare(fare)}
+	return p1.RideID
 }
 
 func parsePath(record []string) *pathNode {
