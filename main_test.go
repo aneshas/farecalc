@@ -110,7 +110,7 @@ func TestRun(t *testing.T) {
 
 	run(src, &sink)
 
-	want, err := ioutil.ReadFile("./fares.csv")
+	want, err := ioutil.ReadFile("./testdata/fares.csv")
 	if err != nil {
 		t.Fatal(err)
 	}

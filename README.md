@@ -17,4 +17,4 @@ The script basically has 3 components:
 could be a lot better here, but as I said, due to performance requirements I did not want to do any more work or allocations than neccessary)
 - an output sink which consumes fare estimations and writes them to output.
 
-I also included some unit tests and a single integration test. (I was not exhaustive here)
+I also included some unit tests and a single integration test (golden file). (I was not exhaustive here)
