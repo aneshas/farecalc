@@ -7,7 +7,7 @@ the script will default to `stdin` or `stdout` respectively, which means you can
 `cat paths.csv | farecalc >> out.csv`
 
 # Design Overview
-The main requirements for this script were: use of concurrency, be performant and the fact that it should be "a script", not an application.
+The main requirements for this script were: use of concurrency, be performant and the fact that it should be "a script", not an application that would ingest a kafka topic for eg...
 Thus, I chose to go with a very simple design for this script (could be even simpler), eg. no sub-packages, I was sparse with types, interfaces,
 decoupling, no use of decimal's etc...
 
